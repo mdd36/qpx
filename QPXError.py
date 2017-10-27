@@ -1,0 +1,2 @@
+class QPXException(Exception):
+    pass
