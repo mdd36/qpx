@@ -18,7 +18,7 @@ class QPX:
     """
     def __init__(self, data_path):
         self.data_path = data_path
-        self._url = constants.api_url + self._get_api_key()
+        self.set_key(self._get_api_key())
 
     """
     Create a QPX object with a string for the API key
@@ -34,7 +34,7 @@ class QPX:
     @:param api_key: API key to use for all requests until it gets refined
     """
     def set_key(self, api_key):
-        self._url = constants.api_url + api_key
+        self._url = constants.APU_URL + api_key
 
     """
     Make a request of the Google Flights API with the API key of this object.
@@ -51,12 +51,11 @@ class QPX:
     @return: Desirable information sliced out of the received json file, namely ticket price, departure times,
              airlines used, airports used, and flight codes
     """
-    def make_request(self, arrive, depart, date, adultcount=str(1), childcount=str(0), seniorcount=str(0),
-                     earliestdepart = '00:00', latestdepart = '23:59', earliestarrive='00:00', latestarrive='23:59',
-                     maxprice='1000000', solutions='25', permittedcarriers=[], forbiddencarriers=[],
-                     refundable=False, preferredcabin='coach', maxstops=100, maxconndur=240):
+    def make_request(self, arrive, depart, date, **kwargs):
+        self.response = {}
         self._package_request(**locals())
-        return self._send_requests()
+        self._send_requests()
+        return self.response
 
     def _get_api_key(self):
         key_location = os.path.join(self.data_path)
@@ -64,56 +63,30 @@ class QPX:
             return key_file.readline()
 
     def _package_request(self, param_dict):
-        self.request = {'request': {
-            'passengers': {
-                'adultCount': param_dict['adultcount'],
-                'childCount': param_dict['childcount'],
-                'seniorCount': param_dict['senoircount']
-            },
-            'slice': [
-                {
-                    'origin': param_dict['depart'],
-                    'destination': param_dict['arrive'],
-                    'date': param_dict['date'],
-                    'maxConnectionDuration': param_dict['maxconntdur'],
-                    'preferredCabin': param_dict['preferredcabin'].upper(),
-                    'permittedCarrier': param_dict['permittedcarriers'],
-                    'prohibitedCarrier': param_dict['forbiddenCarriers'],
-                    'permittedDepartTime':
-                        {
-                            'kind': 'qpxexpress#timeOfDayRange',
-                            'earliestTime': param_dict['earliestdepart'],
-                            'latestTime':  param_dict['latestdepart']
-                        },
-                    'permittedArrivalTime':
-                        {
-                            'kind': 'qpxexpress#timeOfDayRange',
-                            'earliestTime': param_dict['earliestarrive'],
-                            'latestTime': param_dict['latestarrive']
-                        }
-
-            }],
-            'maxPrice': param_dict['maxprice'],
-            'solutions': param_dict['solutions'],
-            'refundable': param_dict['solutions']
-            }
-        }
+        self.request = constants.DEFAULT_REQUEST
+        for key in param_dict.keys():
+            if key in requests:
+                self.request[key] = param_dict[key]
 
     def _send_requests(self):
-        response = self._package_response()
-        ret = {}
-        for trip in range(len(response)):
-            ret[trip] = {}
-            for temp in response['trips']['tripOption']:
-                self._add_root_data(ret, temp, trip)
-                self._create_data_lists(ret, trip)
-                for __slice in temp['slice']:
-                    for segment in __slice['segment']:
-                        self._add_flight_data(ret, segment, trip)
-        return ret
+        reply = self._package_response()
+        for trip in range(len(reply)):
+            self.response[trip] = {}
+            self._add_trip_info(reply, trip)
+
+    def _add_trip_info(self, reply, trip):
+        for temp in reply['trips']['tripOption']:
+            self._add_root_data(self.response, temp, trip)
+            self._create_data_lists(self.response, trip)
+            self._add_slice_data(temp, trip)
+
+    def _add_slice_data(self, temp, trip):
+        for __slice in temp['slice']:
+            for segment in __slice['segment']:
+                self._add_flight_data(self.response, segment, trip)
 
     def _package_response(self):
-        x = requests.post(self._url, data=json.dumps(self.request), headers=constants.header)
+        x = requests.post(self._url, data=json.dumps(self.request), headers=constants.HEADER)
         if x is not None:
             response = x.json()
             if response.__contains__('Error'):
